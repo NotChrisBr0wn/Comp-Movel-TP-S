@@ -10,7 +10,11 @@ class Task(ft.Column):
     on_status_change: Callable[[], None] = field(default=lambda: None)
     on_delete: Callable[["Task"], None] = field(default=lambda task: None)
 
-    def init(self):
+    def __init__(self, task_name, on_status_change, on_delete, **kwargs):
+        super().__init__(**kwargs)
+        self.task_name = task_name
+        self.on_status_change = on_status_change
+        self.on_delete = on_delete
         self.completed = False
         self.display_task = ft.Checkbox(
             value=False, label=self.task_name, on_change=self.status_changed
@@ -56,6 +60,7 @@ class Task(ft.Column):
         )
         self.controls = [self.display_view, self.edit_view]
 
+
     def edit_clicked(self, e):
         self.edit_name.value = self.display_task.label
         self.display_view.visible = False
@@ -79,16 +84,18 @@ class Task(ft.Column):
 @ft.control
 class TodoApp(ft.Column):
     # application's root control is a Column containing all other controls
-    def init(self):
+    def __init__(self):
+        super().__init__()
         self.new_task = ft.TextField(hint_text="Whats needs to be done?", expand=True)
         self.tasks = ft.Column()
+        self.items_left = ft.Text("0 active item(s) left")
 
         self.filter = ft.TabBar(
             scrollable=False,
             tabs=[
-                ft.Tab(label="all"),
-                ft.Tab(label="active"),
-                ft.Tab(label="completed"),
+                ft.Tab(label="All"),
+                ft.Tab(label="Active"),
+                ft.Tab(label="Completed"),
             ],
         )
 
@@ -116,6 +123,17 @@ class TodoApp(ft.Column):
                     self.tasks,
                 ],
             ),
+            ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    self.items_left,
+                    ft.OutlinedButton(
+                        "Clear Completed",
+                        on_click=self.clear_completed,
+                    )
+                ],
+            ),
         ]
 
     def add_clicked(self, e):
@@ -135,34 +153,39 @@ class TodoApp(ft.Column):
         self.tasks.controls.remove(task)
         self.update()
 
+    def clear_completed(self, e):
+        self.tasks.controls = [
+            task for task in self.tasks.controls if not task.completed
+        ]
+        self.update()
+
     def before_update(self):
-        status = self.filter.tabs[self.filter_tabs.selected_index].label
+        status = self.filter.tabs[self.filter_tabs.selected_index].label.lower()
+        active_tasks = 0
         for task in self.tasks.controls:
             task.visible = (
                 status == "all"
                 or (status == "active" and not task.completed)
                 or (status == "completed" and task.completed)
             )
-
-    def tabs_changed(self, e):
-        self.update()
-
+            if not task.completed:
+                active_tasks += 1
+        
+        self.items_left.value = f"{active_tasks} active item(s) left"
 
 def main(page: ft.Page):
     page.title = "To-Do App"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.update()
-
-    if page.platform in [ft.PagePlatform.IOS, ft.PagePlatform.ANDROID]:
-        page.padding = ft.padding.only(top=55, left=10, right=10)
-    else:
-        page.padding = 20
+    
+    if page.width is not None and page.width < 500:
+        page.padding = ft.padding.only(top=60)
 
     # create application instance
     app = TodoApp()
 
     # add application's root control to the page
     page.add(app)
+    page.update()
 
 
-ft.run(main)
+ft.app(target=main)

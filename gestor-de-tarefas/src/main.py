@@ -178,7 +178,7 @@ def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     
     if page.width is not None and page.width < 500:
-        page.padding = ft.padding.only(top=60)
+        page.padding = ft.padding.only(top=60, left = 15, right=15)
 
     # create application instance
     app = TodoApp()

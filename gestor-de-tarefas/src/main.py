@@ -154,7 +154,7 @@ def main(page: ft.Page):
     page.update()
 
     if page.platform in [ft.PagePlatform.IOS, ft.PagePlatform.ANDROID]:
-        page.padding = ft.padding.only(top=50, left=10, right=10)
+        page.padding = ft.padding.only(top=45, left=10, right=10)
     else:
         page.padding = 20
 

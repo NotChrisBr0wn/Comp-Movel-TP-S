@@ -153,6 +153,11 @@ def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.update()
 
+    if page.platform in [ft.PagePlatform.IOS, ft.PagePlatform.ANDROID]:
+        page.padding = ft.padding.only(top=50, left=10, right=10)
+    else:
+        page.padding = 20
+
     # create application instance
     app = TodoApp()
 

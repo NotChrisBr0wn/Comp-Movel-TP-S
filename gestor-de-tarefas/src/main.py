@@ -2,7 +2,7 @@ from dataclasses import field
 from typing import Callable
 
 import flet as ft
-
+import os
 
 @ft.control
 class Task(ft.Column):
@@ -68,9 +68,11 @@ class Task(ft.Column):
         self.update()
 
     def save_clicked(self, e):
-        self.display_task.label = self.edit_name.value
+        self.display_task.label = self.edit_name.value 
+        self.display_task.label =self.edit_name.value # atualiza o estado interno
         self.display_view.visible = True
         self.edit_view.visible = False
+        self.on_status_change() # notifica a mudança de estado
         self.update()
 
     def status_changed(self, e):
@@ -84,8 +86,9 @@ class Task(ft.Column):
 @ft.control
 class TodoApp(ft.Column):
     # application's root control is a Column containing all other controls
-    def __init__(self):
+    def __init__(self, page: ft.Page):
         super().__init__()
+        self._page = page
         self.new_task = ft.TextField(hint_text="Whats needs to be done?", expand=True)
         self.tasks = ft.Column()
         self.items_left = ft.Text("0 active item(s) left")
@@ -136,6 +139,17 @@ class TodoApp(ft.Column):
             ),
         ]
 
+    async def save_storage(self):
+        # strings
+        await self._page.shared_preferences.set("key", "value")
+
+        # numbers, booleans
+        await self._page.shared_preferences.set("number.setting", 12345)
+        await self._page.shared_preferences.set("bool_setting", True)
+
+        # lists
+        await self._page.shared_preferences.set("favorite_colors", ["red", "green", "blue"])
+
     def add_clicked(self, e):
         task = Task(
             task_name=self.new_task.value,
@@ -172,7 +186,6 @@ class TodoApp(ft.Column):
                 active_tasks += 1
         
         self.items_left.value = f"{active_tasks} active item(s) left"
-
 def main(page: ft.Page):
     page.title = "To-Do App"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
@@ -180,8 +193,8 @@ def main(page: ft.Page):
     if page.width is not None and page.width < 500:
         page.padding = ft.padding.only(top=60, left = 15, right=15)
 
-    # create application instance
-    app = TodoApp()
+    # create application instance and keep a reference to page
+    app = TodoApp(page)
 
     # add application's root control to the page
     page.add(app)

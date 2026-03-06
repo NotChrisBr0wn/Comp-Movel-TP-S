@@ -67,7 +67,6 @@ class Task(ft.Column):
 
     async def save_clicked(self, e):
         self.display_task.label = self.edit_name.value 
-        self.display_task.label =self.edit_name.value # atualiza o estado interno
         self.display_view.visible = True
         self.edit_view.visible = False
         await self.on_status_change() # notifica a mudança de estado
@@ -137,8 +136,10 @@ class TodoApp(ft.Column):
                 ],
             ),
         ]
-
-        self.load_tasks()
+        # O método agora é assincrono
+        #self.load_tasks()
+        async def did_mount(self):
+            await self.load_tasks()
 
     async def save_task(self):
         # Guardar as tarefas no client storage e duckDB (parquet)
@@ -190,10 +191,10 @@ class TodoApp(ft.Column):
 
     async def add_clicked(self, e):
         if self.new_task.value:
-            task = Task(task = Task(self.new_task.value, self.task_status_change, self.task_delete))
+            task = Task(self.new_task.value, self.task_status_change, self.task_delete)
             self.tasks.controls.append(task)
             self.new_task.value = ""
-            self.save_task()
+            await self.save_task()
             self.update()
 
     async def task_status_change(self):

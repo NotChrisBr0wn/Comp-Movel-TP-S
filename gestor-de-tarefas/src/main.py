@@ -88,26 +88,20 @@ class TodoApp(ft.Column):
         self._page = page
         self.new_task = ft.TextField(hint_text="Whats needs to be done?", expand=True)
         self.tasks = ft.Column()
-
-        self.filter = ft.TabBar(
-            scrollable=False,
+        
+        self.filter_tabs = ft.Tabs(
+            selected_index=0,
+            on_change=lambda e: self.update(),
             tabs=[
                 ft.Tab(label="All"),
                 ft.Tab(label="Active"),
                 ft.Tab(label="Completed"),
             ],
         )
-
-        self.items_left = ft.Text("0 items left")
-
-        self.filter_tabs = ft.Tabs(
-            length=3,
-            selected_index=0,
-            on_change=lambda e: self.update(),
-            content=self.filter,
-        )
-
+        
+        self.items_left = ft.Text("0 active item(s) left")
         self.width = 600
+        
         self.controls = [
             ft.Row(
                 controls=[
@@ -136,10 +130,11 @@ class TodoApp(ft.Column):
                 ],
             ),
         ]
-        # O método agora é assincrono
-        #self.load_tasks()
-        async def did_mount(self):
-            await self.load_tasks()
+
+    # O método agora é assincrono
+    #self.load_tasks()
+    async def did_mount(self):
+        await self.load_tasks()
 
     async def save_task(self):
         # Guardar as tarefas no client storage e duckDB (parquet)
@@ -177,14 +172,14 @@ class TodoApp(ft.Column):
         self.tasks.controls.clear()
 
         # Constroi a UI com as tarefas carregadas
-        for task in tasks_data:
+        for item in tasks_data:
             new_task = Task(
-                task_name=task["name"],
+                item["name"],
                 on_status_change=self.task_status_change,
                 on_delete=self.task_delete,
             )
-            new_task.completed = task["completed"]
-            new_task.display_task.value = task["completed"]
+            new_task.completed = item["completed"]
+            new_task.display_task.value = item["completed"]
             self.tasks.controls.append(new_task)
         self.update()
 
@@ -214,7 +209,7 @@ class TodoApp(ft.Column):
         self.update()
 
     def before_update(self):
-        status = self.filter.tabs[self.filter_tabs.selected_index].label.lower()
+        status = self.filter_tabs.tabs[self.filter_tabs.selected_index].label.lower()
         active_tasks = 0
         for task in self.tasks.controls:
             task.visible = (

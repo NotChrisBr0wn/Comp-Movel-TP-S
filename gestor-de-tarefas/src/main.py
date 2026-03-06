@@ -169,30 +169,35 @@ class TodoApp(ft.Column):
             try:
                 tasks_data = db.execute("SELECT * FROM 'tasks.parquet'").fetchall()
                 tasks_data = [{"name": t[0], "completed": t[1]} for t in tasks_data]
-            except Exception:
+            except Exception as e:
+                print("Erro ao carregar tarefas do parquet:", {e})
                 tasks_data = self._page.client_storage.get("todo_tasks") or []
         else:
             tasks_data = self._page.client_storage.get("todo_tasks") or []
 
+        # Limpa as tarefas atuais antes de carregar as novas
+        self.tasks.controls.clear()
+
         # Constroi a UI com as tarefas carregadas
         for task in tasks_data:
-            task = Task(
+            new_task = Task(
                 task_name=task["name"],
                 on_status_change=self.task_status_change,
                 on_delete=self.task_delete,
             )
-            task.completed = task["completed"]
-            task.display_task.value = task["completed"]
-            self.tasks.controls.append(task)
+            new_task.completed = task["completed"]
+            new_task.display_task.value = task["completed"]
+            self.tasks.controls.append(new_task)
         self.update()
 
 
     def add_clicked(self, e):
-        task = Task(task = Task(self.new_task.value, self.task_status_change, self.task_delete))
-        self.tasks.controls.append(task)
-        self.new_task.value = ""
-        self.save_task()
-        self.update()
+        if self.new_task.value:
+            task = Task(task = Task(self.new_task.value, self.task_status_change, self.task_delete))
+            self.tasks.controls.append(task)
+            self.new_task.value = ""
+            self.save_task()
+            self.update()
 
     def task_status_change(self):
         self.save_task()

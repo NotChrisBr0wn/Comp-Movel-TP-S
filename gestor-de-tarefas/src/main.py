@@ -3,6 +3,9 @@ from typing import Callable
 
 import flet as ft
 import os
+import duckdb as db
+import pandas as pd
+import json
 
 @ft.control
 class Task(ft.Column):
@@ -139,38 +142,72 @@ class TodoApp(ft.Column):
             ),
         ]
 
-    async def save_storage(self):
-        # strings
-        await self._page.shared_preferences.set("key", "value")
+        self.load_tasks()
 
-        # numbers, booleans
-        await self._page.shared_preferences.set("number.setting", 12345)
-        await self._page.shared_preferences.set("bool_setting", True)
+    def save_task(self):
+        # Guardar as tarefas no client storage e duckDB (parquet)
+        tasks_data = [
+            {"name": task.display_task.label, "completed": task.completed}
+            for task in self.tasks.controls
+        ]
 
-        # lists
-        await self._page.shared_preferences.set("favorite_colors", ["red", "green", "blue"])
+        # Client-Side
+        self._page.client_storage.set("todo_tasks", tasks_data)
+
+        # DuckDB (parquet)
+        if tasks_data:
+            df = pd.DataFrame(tasks_data)
+            db.execute("COPY df TO 'tasks.parquet' (FORMAT 'PARQUET')")
+        else: # Se não houver tarefas remove o arquivo parquet
+            if os.path.exists("tasks.parquet"):
+                os.remove("tasks.parquet")
+    
+    def load_tasks(self):
+        # Carregar tarefas do client storage
+        tasks_data = []
+        if os.path.exists("tasks.parquet"):
+            try:
+                tasks_data = db.execute("SELECT * FROM 'tasks.parquet'").fetchall()
+                tasks_data = [{"name": t[0], "completed": t[1]} for t in tasks_data]
+            except Exception:
+                tasks_data = self._page.client_storage.get("todo_tasks") or []
+        else:
+            tasks_data = self._page.client_storage.get("todo_tasks") or []
+
+        # Constroi a UI com as tarefas carregadas
+        for task in tasks_data:
+            task = Task(
+                task_name=task["name"],
+                on_status_change=self.task_status_change,
+                on_delete=self.task_delete,
+            )
+            task.completed = task["completed"]
+            task.display_task.value = task["completed"]
+            self.tasks.controls.append(task)
+        self.update()
+
 
     def add_clicked(self, e):
-        task = Task(
-            task_name=self.new_task.value,
-            on_status_change=self.task_status_change,
-            on_delete=self.task_delete,
-        )
+        task = Task(task = Task(self.new_task.value, self.task_status_change, self.task_delete))
         self.tasks.controls.append(task)
         self.new_task.value = ""
+        self.save_task()
         self.update()
 
     def task_status_change(self):
+        self.save_task()
         self.update()
 
     def task_delete(self, task):
         self.tasks.controls.remove(task)
+        self.save_task()
         self.update()
 
     def clear_completed(self, e):
         self.tasks.controls = [
             task for task in self.tasks.controls if not task.completed
         ]
+        self.save_task()
         self.update()
 
     def before_update(self):

@@ -1,4 +1,9 @@
 venv/
 .env
 .parquet
-.gitignore`n.vscode/
+.gitignore
+.vscode/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

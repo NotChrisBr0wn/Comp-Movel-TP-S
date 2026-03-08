@@ -3,8 +3,7 @@ import os
 import duckdb as db
 import pandas as pd
 import json
-from dataclasses import field
-from typing import Callable, Optional
+from typing import Optional
 from encryption import EncryptionManager
 
 
@@ -89,9 +88,11 @@ class Task(ft.Column):
 @ft.control
 class TodoApp(ft.Column):
     # application's root control is a Column containing all other controls
-    def __init__(self, page: ft.Page):
+    def __init__(self, page: ft.Page, user_id: str, user_name: str):
         super().__init__(spacing=10)
         self._page = page
+        self.user_id = user_id
+        self.user_name = user_name
         # Responsive width based on screen size
         self.width = min(600, page.width * 0.9) if page.width else 600
         self.db_tasks: list[dict] = []  # Central list for task data
@@ -128,6 +129,7 @@ class TodoApp(ft.Column):
         self.items_left = ft.Text("0 active item(s) left")
 
         self.controls = [
+            ft.Text(f"Signed in as: {self.user_name}", size=13),
             ft.Row(
                 controls=[
                     self.new_task,
@@ -161,6 +163,18 @@ class TodoApp(ft.Column):
             ),
         ]
 
+    def _get_user_storage_key(self) -> str:
+        return f"todo_tasks:{self.user_id}"
+
+    def _get_user_parquet_path(self) -> str:
+        safe_user_id = "".join(
+            char if char.isalnum() or char in ("-", "_") else "_"
+            for char in self.user_id
+        )
+        storage_dir = os.path.join("storage", "data")
+        os.makedirs(storage_dir, exist_ok=True)
+        return os.path.join(storage_dir, f"tasks_{safe_user_id}.parquet")
+
     def switch_tab(self, index):
         self.current_view = index
         if index == 0:
@@ -174,6 +188,8 @@ class TodoApp(ft.Column):
     async def save_task(self):
         # Guardar as tarefas no client storage e duckDB (parquet)
         tasks_data = self.db_tasks
+        user_storage_key = self._get_user_storage_key()
+        parquet_path = self._get_user_parquet_path()
         
         # Convert to JSON string
         json_data = json.dumps(tasks_data)
@@ -187,16 +203,16 @@ class TodoApp(ft.Column):
 
         # Client-Side
         prefs = ft.SharedPreferences()
-        await prefs.set("todo_tasks", json_data)
+        await prefs.set(user_storage_key, json_data)
 
         # DuckDB (parquet) - store encrypted data
         if tasks_data:
             # Store as single encrypted string in parquet
             df = pd.DataFrame([{"encrypted_data": json_data}])
-            db.execute("COPY df TO 'tasks.parquet' (FORMAT 'PARQUET')")
+            db.execute(f"COPY df TO '{parquet_path}' (FORMAT 'PARQUET')")
         else: # Se não houver tarefas remove o arquivo parquet
-            if os.path.exists("tasks.parquet"):
-                os.remove("tasks.parquet")
+            if os.path.exists(parquet_path):
+                os.remove(parquet_path)
     
     def _update_views(self):
         self.tasks_view.controls.clear()
@@ -245,7 +261,8 @@ class TodoApp(ft.Column):
     async def load_tasks(self):
         # Carregar tarefas do client storage
         tasks_data = []
-        parquet_path = "tasks.parquet"
+        user_storage_key = self._get_user_storage_key()
+        parquet_path = self._get_user_parquet_path()
         encrypted_data = None
         
         if os.path.exists(parquet_path):
@@ -258,11 +275,11 @@ class TodoApp(ft.Column):
                 print(f"Error loading from parquet: {e}")
                 # Fallback to shared_preferences if parquet fails
                 prefs = ft.SharedPreferences()
-                encrypted_data = await prefs.get("todo_tasks")
+                encrypted_data = await prefs.get(user_storage_key)
         else:
             # Load from shared_preferences if parquet doesn't exist
             prefs = ft.SharedPreferences()
-            encrypted_data = await prefs.get("todo_tasks")
+            encrypted_data = await prefs.get(user_storage_key)
         
         # Decrypt and parse data
         if encrypted_data:
@@ -323,19 +340,134 @@ async def main(page: ft.Page):
     page.title = "To-Do App"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
-    page.padding = ft.padding.only(left=20, right=20, top=70, bottom=20)  # Extra top padding for safe area
+    page.padding = ft.Padding.only(left=20, right=20, top=70, bottom=20)  # top padding (default on ios was too high)
+    page.on_logout = None
+
+    app_state: dict[str, Optional[TodoApp]] = {"app": None}
+
+    github_client_id = os.getenv("GITHUB_CLIENT_ID")
+    github_client_secret = os.getenv("GITHUB_CLIENT_SECRET")
+    github_redirect_url = os.getenv("GITHUB_REDIRECT_URL", "http://localhost:8550/oauth_callback")
+
+    oauth_provider: Optional[ft.auth.GitHubOAuthProvider] = None
+    if github_client_id and github_client_secret:
+        oauth_provider = ft.auth.GitHubOAuthProvider(
+            client_id=github_client_id,
+            client_secret=github_client_secret,
+            redirect_url=github_redirect_url,
+        )
+
+    def _extract_user_name(user: object) -> str:
+        for key in ("name", "login", "email"):
+            try:
+                value = user[key]  
+                if value:
+                    return str(value)
+            except Exception:
+                pass
+        return "User"
+
+    def _get_auth_user() -> object | None:
+        if not page.auth:
+            return None
+        return getattr(page.auth, "user", None)
+
+    async def show_login_view(message: Optional[str] = None):
+        app_state["app"] = None
+
+        async def login_click(e):
+            if oauth_provider:
+                try:
+                    await page.login(oauth_provider, scope=["read:user"])
+                except NotImplementedError:
+                    await show_login_view(
+                        "OAuth is not supported in this runtime. Run: flet run --web src/main.py"
+                    )
+
+        login_button = ft.Button(
+            "Login with GitHub",
+            disabled=oauth_provider is None,
+            on_click=login_click,
+        )
+
+        info_text = "Configure GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in .env to enable OAuth login."
+        if oauth_provider:
+            info_text = "Authenticate with GitHub to access your tasks."
+
+        controls: list[ft.Control] = [
+            ft.Text("To-Do App", size=30, weight=ft.FontWeight.BOLD),
+            ft.Text(info_text),
+            login_button,
+        ]
+
+        if message:
+            controls.insert(1, ft.Text(message, color=ft.Colors.RED_500))
+
+        page.clean()
+        page.add(
+            ft.Container(
+                content=ft.Column(
+                    controls=controls,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=16,
+                ),
+                expand=True,
+            )
+        )
+        page.update()
+
+    async def show_todo_app():
+        auth_user = _get_auth_user()
+        if not auth_user:
+            await show_login_view("Authentication required.")
+            return
+
+        current_user_id = str(getattr(auth_user, "id", ""))
+        if not current_user_id:
+            await show_login_view("Could not read authenticated user id.")
+            return
+
+        current_user_name = _extract_user_name(auth_user)
+
+        app = TodoApp(page, user_id=current_user_id, user_name=current_user_name)
+        app_state["app"] = app
+
+        page.clean()
+        page.add(
+            ft.Row(
+                controls=[
+                    ft.Text(f"Signed in: {current_user_name}", size=14),
+                    ft.TextButton("Logout", on_click=lambda e: page.logout()),
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
+            app,
+        )
+        await app.load_tasks()  # Load user-specific tasks
+        page.update()
+
+    async def on_login(e: ft.LoginEvent):
+        if e.error:
+            await show_login_view(f"Login failed: {e.error}")
+            return
+        await show_todo_app()
+
+    async def on_logout(e):
+        await show_login_view("You have been logged out.")
     
-    # Update app width on window resize
     def on_resize(e):
-        if hasattr(page, 'controls') and page.controls:
-            app = page.controls[0]
-            app.width = min(600, page.width * 0.9) if page.width else 600
+        if app_state["app"]:
+            app_state["app"].width = min(600, page.width * 0.9) if page.width else 600
             page.update()
     
     page.on_resize = on_resize
-    
-    app = TodoApp(page)
-    page.add(app)
-    await app.load_tasks()  # Load tasks after adding to page
 
-ft.run(main)
+    page.on_login = on_login
+    page.on_logout = on_logout
+
+    if _get_auth_user():
+        await show_todo_app()
+    else:
+        await show_login_view()
+
+ft.run(main, port=8550)

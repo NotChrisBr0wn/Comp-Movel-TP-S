@@ -16,9 +16,12 @@ class Task(ft.Column):
         self.on_delete = on_delete
         self.completed = False
         self.display_task = ft.Checkbox(
-            value=False, label=self.task_name, on_change=self.status_changed
+            value=False,
+            label=self.task_name,
+            on_change=self.status_changed,
+            adaptive=True,
         )
-        self.edit_name = ft.TextField(expand=1)
+        self.edit_name = ft.TextField(expand=1, adaptive=True)
         self.display_view = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -31,11 +34,13 @@ class Task(ft.Column):
                             icon=ft.Icons.CREATE_OUTLINED,
                             tooltip="Edit To-Do",
                             on_click=self.edit_clicked,
+                            adaptive=True,
                         ),
                         ft.IconButton(
                             ft.Icons.DELETE_OUTLINE,
                             tooltip="Delete To-Do",
                             on_click=self.delete_clicked,
+                            adaptive=True,
                         ),
                     ],
                 ),
@@ -53,6 +58,7 @@ class Task(ft.Column):
                     icon_color=ft.Colors.GREEN,
                     tooltip="Update To-Do",
                     on_click=self.save_clicked,
+                    adaptive=True,
                 ),
             ],
         )
@@ -73,60 +79,76 @@ class Task(ft.Column):
         self.update()
 
     async def status_changed(self, e):
-        self.completed = self.display_task.value
-        await self.on_status_change()
+        await self.on_status_change(e)
 
     async def delete_clicked(self, e):
-        await self.on_delete(self)
-
+        await self.on_delete(e)
 
 @ft.control
 class TodoApp(ft.Column):
     # application's root control is a Column containing all other controls
     def __init__(self, page: ft.Page):
-        super().__init__()
+        super().__init__(spacing=10)
         self._page = page
-        self.new_task = ft.TextField(hint_text="Whats needs to be done?", expand=True)
-        self.tasks = ft.Column()
-        
-        
-        self.filter_tabs = ft.Tabs(
-            selected_index=0,
-            on_change=lambda e: self.update(),
-            tabs=[
-                ft.Tab(text="All"),
-                ft.Tab(text="Active"),
-                ft.Tab(text="Completed"),
-            ],
+        # Responsive width based on screen size
+        self.width = min(600, page.width * 0.9) if page.width else 600
+        self.db_tasks: list[dict] = []  # Central list for task data
+        self.new_task = ft.TextField(
+            hint_text="Whats needs to be done?",
+            expand=True,
+            adaptive=True,
         )
+
+        # The main views for tasks
+        self.tasks_view = ft.Column(spacing=5, controls=[])
+        self.active_tasks_view = ft.Column(spacing=5, controls=[])
+        self.completed_tasks_view = ft.Column(spacing=5, controls=[])
         
+        # Current view tracker
+        self.current_view = 0
+        
+        # Tab buttons
+        self.all_tab = ft.TextButton("All", on_click=lambda e: self.switch_tab(0))
+        self.active_tab = ft.TextButton("Active", on_click=lambda e: self.switch_tab(1))
+        self.completed_tab = ft.TextButton("Completed", on_click=lambda e: self.switch_tab(2))
+        
+        # Container to hold the current view
+        self.view_container = ft.Container(
+            content=self.tasks_view,
+            expand=True,
+        )
+
         self.items_left = ft.Text("0 active item(s) left")
-        self.width = 600
-        
+
         self.controls = [
             ft.Row(
                 controls=[
                     self.new_task,
                     ft.FloatingActionButton(
-                        icon=ft.Icons.ADD, on_click=self.add_clicked
+                        icon=ft.Icons.ADD,
+                        on_click=self.add_clicked,
                     ),
                 ],
             ),
-            ft.Column(
-                spacing=25,
+            ft.Row(
                 controls=[
-                    self.filter_tabs,
-                    self.tasks,
+                    self.all_tab,
+                    self.active_tab,
+                    self.completed_tab,
                 ],
+                spacing=10,
             ),
+            self.view_container,
             ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                wrap=True,
                 controls=[
                     self.items_left,
                     ft.OutlinedButton(
                         "Clear Completed",
                         on_click=self.clear_completed,
+                        adaptive=True,
                     )
                 ],
             ),
@@ -135,15 +157,23 @@ class TodoApp(ft.Column):
     async def did_mount(self):
         await self.load_tasks()
 
+    def switch_tab(self, index):
+        self.current_view = index
+        if index == 0:
+            self.view_container.content = self.tasks_view
+        elif index == 1:
+            self.view_container.content = self.active_tasks_view
+        elif index == 2:
+            self.view_container.content = self.completed_tasks_view
+        self.update()
+
     async def save_task(self):
         # Guardar as tarefas no client storage e duckDB (parquet)
-        tasks_data = [
-            {"name": task.display_task.label, "completed": task.completed}
-            for task in self.tasks.controls
-        ]
+        tasks_data = self.db_tasks
 
-        # Client-Side
-        await self._page.shared_preferences.set("todo_tasks", json.dumps(tasks_data))
+        # Client-Side (using new SharedPreferences API)
+        prefs = ft.SharedPreferences(self._page)
+        await prefs.set("todo_tasks", json.dumps(tasks_data))
 
         # DuckDB (parquet)
         if tasks_data:
@@ -153,78 +183,116 @@ class TodoApp(ft.Column):
             if os.path.exists("tasks.parquet"):
                 os.remove("tasks.parquet")
     
+    def _update_views(self):
+        self.tasks_view.controls.clear()
+        self.active_tasks_view.controls.clear()
+        self.completed_tasks_view.controls.clear()
+        
+        active_tasks_count = 0
+
+        # A function to create a Task UI instance for a given data dict
+        def create_task_ui(data):
+            # Closure to capture the data for the handlers
+            def create_handlers(d):
+                async def on_status_change(e):
+                    await self.task_status_change(d, e.control.value)
+                async def on_delete(e):
+                    await self.task_delete(d)
+                return on_status_change, on_delete
+
+            on_status_change_handler, on_delete_handler = create_handlers(data)
+            
+            task_ui = Task(
+                data["name"],
+                on_status_change=on_status_change_handler,
+                on_delete=on_delete_handler,
+            )
+            task_ui.display_task.value = data["completed"]
+            return task_ui
+
+        for task_data in self.db_tasks:
+            # Create an instance for the "All" view
+            self.tasks_view.controls.append(create_task_ui(task_data))
+
+            # Create another instance for the "Active" or "Completed" view
+            if task_data["completed"]:
+                self.completed_tasks_view.controls.append(create_task_ui(task_data))
+            else:
+                active_tasks_count += 1
+                self.active_tasks_view.controls.append(create_task_ui(task_data))
+        
+        self.items_left.value = f"{active_tasks_count} active item(s) left"
+        self.update()
+
     async def load_tasks(self):
         # Carregar tarefas do client storage
         tasks_data = []
-        if os.path.exists("tasks.parquet"):
+        parquet_path = "tasks.parquet"
+        
+        if os.path.exists(parquet_path):
             try:
-                tasks_data = db.execute("SELECT * FROM 'tasks.parquet'").fetchall() # Tenta carregar do parquet
-                tasks_data = [{"name": t[0], "completed": t[1]} for t in tasks_data]
-            except Exception:
-                raw_data = await self._page.shared_preferences.get("todo_tasks") # Fallback para client storage se houver algum problema com o parquet
+                result = db.execute("SELECT * FROM 'tasks.parquet'").fetchall()
+                tasks_data = [{"name": t[0], "completed": t[1]} for t in result]
+            except Exception as e:
+                # Fallback to shared_preferences if parquet fails
+                prefs = ft.SharedPreferences(self._page)
+                raw_data = await prefs.get("todo_tasks")
                 tasks_data = json.loads(raw_data) if raw_data else []
         else:
-            raw_data = await self._page.shared_preferences.get("todo_tasks") # Fallback para client storage se o parquet não existir
+            # Load from shared_preferences if parquet doesn't exist
+            prefs = ft.SharedPreferences(self._page)
+            raw_data = await prefs.get("todo_tasks")
             tasks_data = json.loads(raw_data) if raw_data else []
 
-        # Limpa as tarefas atuais antes de carregar as novas
-        self.tasks.controls.clear()
-
-        # Constroi a UI com as tarefas carregadas
-        for item in tasks_data:
-            new_task = Task(
-                item["name"],
-                on_status_change=self.task_status_change,
-                on_delete=self.task_delete,
-            )
-            new_task.completed = item["completed"]
-            new_task.display_task.value = item["completed"]
-            self.tasks.controls.append(new_task)
-        self.update()
+        self.db_tasks = tasks_data
+        self._update_views()
 
 
     async def add_clicked(self, e):
         if self.new_task.value:
-            task = Task(self.new_task.value, self.task_status_change, self.task_delete)
-            self.tasks.controls.append(task)
+            # Create a new task as a dictionary
+            new_task_data = {"name": self.new_task.value, "completed": False}
+            # Add it to our central data list
+            self.db_tasks.append(new_task_data)
+            # Clear the input field
             self.new_task.value = ""
+            # Save the updated list of tasks
             await self.save_task()
-            self.update()
+            # Re-render the UI from the data
+            self._update_views()
 
-    async def task_status_change(self):
+    async def task_status_change(self, task_data, completed):
+        task_data['completed'] = completed
         await self.save_task()
-        self.update()
+        self._update_views()
 
-    async def task_delete(self, task):
-        self.tasks.controls.remove(task)
+    async def task_delete(self, task_data):
+        self.db_tasks.remove(task_data)
         await self.save_task()
-        self.update()
+        self._update_views()
 
     async def clear_completed(self, e):
-        self.tasks.controls = [
-            task for task in self.tasks.controls if not task.completed
-        ]
+        self.db_tasks = [task for task in self.db_tasks if not task["completed"]]
         await self.save_task()
-        self.update()
-
-    def before_update(self):
-        status = self.filter_tabs.tabs[self.filter_tabs.selected_index].text.lower()
-        active_tasks = 0
-        for task in self.tasks.controls:
-            task.visible = (
-                status == "all"
-                or (status == "active" and not task.completed)
-                or (status == "completed" and task.completed)
-            )
-            if not task.completed:
-                active_tasks += 1
-        
-        self.items_left.value = f"{active_tasks} active item(s) left"
+        self._update_views()
 
 async def main(page: ft.Page):
     page.title = "To-Do App"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.scroll = ft.ScrollMode.ADAPTIVE
+    page.padding = 20
+    
+    # Update app width on window resize
+    def on_resize(e):
+        if hasattr(page, 'controls') and page.controls:
+            app = page.controls[0]
+            app.width = min(600, page.width * 0.9) if page.width else 600
+            page.update()
+    
+    page.on_resize = on_resize
+    
     app = TodoApp(page)
     page.add(app)
+    await app.load_tasks()  # Load tasks after adding to page
 
 ft.run(main)

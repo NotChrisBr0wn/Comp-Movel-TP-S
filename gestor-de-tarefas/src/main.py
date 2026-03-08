@@ -6,6 +6,7 @@ import json
 from typing import Optional
 from encryption import EncryptionManager
 
+
 @ft.control
 class Task(ft.Column):
     def __init__(self, task_name, on_status_change, on_delete, on_name_change, **kwargs):
@@ -486,5 +487,5 @@ ft.app(
     target=main,
     host=HOST,
     port=PORT,
-    assets_dir="../assets",
+    assets_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 )

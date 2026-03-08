@@ -1,0 +1,14 @@
+run = "cd gestor-de-tarefas && python src/main.py"
+modules = ["python310:python/3.10"]
+
+[packager]
+language = "python310"
+
+[packager.features]
+packageSearch = true
+guessImports = true
+
+[env]
+VIRTUAL_ENV = "/home/runner/${REPL_SLUG}/venv"
+PATH = "${VIRTUAL_ENV}/bin:${PATH}"
+PYTHONPATH = "/home/runner/${REPL_SLUG}"

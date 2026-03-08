@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Gestor de Tarefas">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Gestor de Tarefas">
+
+  <link rel="icon" type="image/png" href="assets/icons/favicon.png" />
+
+  <title>Gestor de Tarefas</title>
+  <link rel="manifest" href="manifest.json">
+
+  <script>
+    var flet = {
+      pyodide: false,
+      multiView: false,
+      noCdn: false,
+      webSocketEndpoint: "/ws",
+      entrypointBaseUrl: "/",
+      assetBase: "/",
+      routeUrlStrategy: "path",
+      canvasKitBaseUrl: "/canvaskit/",
+      pyodideUrl: "/pyodide/pyodide.js",
+      webRenderer: "auto",
+      fontFallbackBaseUrl: "assets/fonts/",
+      appPackageUrl: "app.tar.gz"
+    };
+
+    flet.flutterAppLoaded = new Promise((resolve) => {
+      flet.flutterAppResolve = resolve;
+    });
+  </script>
+
+  <!-- fletAppConfig -->
+
+  <script src="python.js"></script>
+</head>
+<body>
+  <div id="loading">
+    <style>
+      body {
+        inset: 0;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        position: fixed;
+        background: #0b1220;
+      }
+
+      #loading {
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        height: 100%;
+        justify-content: center;
+        width: 100%;
+        color: #dbeafe;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+      }
+
+      .loading-image {
+        width: 120px;
+        height: 120px;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      #loading.init_done {
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+
+      @keyframes pulse {
+        0%, 100% {
+          opacity: 0.6;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.05);
+        }
+      }
+    </style>
+
+    <img src="assets/icons/loading-animation.png" alt="Loading" class="loading-image" />
+    <div>Loading Gestor de Tarefas...</div>
+  </div>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

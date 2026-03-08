@@ -6,6 +6,12 @@ import json
 from typing import Optional
 from encryption import EncryptionManager
 
+# Compatibility shim for Flet versions that do not expose ft.control.
+if not hasattr(ft, "control"):
+    def _control_decorator(cls):
+        return cls
+
+    ft.control = _control_decorator  # type: ignore[attr-defined]
 
 @ft.control
 class Task(ft.Column):
@@ -339,13 +345,9 @@ async def main(page: ft.Page):
     page.title = "To-Do App"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
-    page.padding = ft.Padding.only(left=20, right=20, top=70, bottom=20)  # top padding (default on ios was too high)
+    page.padding = ft.padding.only(left=20, right=20, top=70, bottom=20)  # top padding (default on ios was too high)
     page.on_logout = None
-    
-    # Web app configuration for Replit deployment
-    if hasattr(page, 'web'):
-        page.web.favicon = "icon.png"
-        page.web.splash = ft.WebSplash(color="#1e1e1e")
+
 
     app_state: dict[str, Optional[TodoApp]] = {"app": None}
 
@@ -484,10 +486,8 @@ async def main(page: ft.Page):
     else:
         await show_login_view()
 
-ft.run(
-    main, 
-    host="0.0.0.0", 
-    port=8080, 
-    view=ft.WEB_BROWSER,
+ft.app(
+    target=main, 
+    port=8550, 
     assets_dir="../assets"
 )

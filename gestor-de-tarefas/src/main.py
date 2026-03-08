@@ -341,6 +341,11 @@ async def main(page: ft.Page):
     page.scroll = ft.ScrollMode.ADAPTIVE
     page.padding = ft.Padding.only(left=20, right=20, top=70, bottom=20)  # top padding (default on ios was too high)
     page.on_logout = None
+    
+    # Web app configuration for Replit deployment
+    if hasattr(page, 'web'):
+        page.web.favicon = "icon.png"
+        page.web.splash = ft.WebSplash(color="#1e1e1e")
 
     app_state: dict[str, Optional[TodoApp]] = {"app": None}
 
@@ -479,4 +484,10 @@ async def main(page: ft.Page):
     else:
         await show_login_view()
 
-ft.run(main, host="0.0.0.0", port=8080, view=ft.WEB_BROWSER)
+ft.run(
+    main, 
+    host="0.0.0.0", 
+    port=8080, 
+    view=ft.WEB_BROWSER,
+    assets_dir="../assets"
+)

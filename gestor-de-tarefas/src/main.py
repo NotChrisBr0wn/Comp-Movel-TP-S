@@ -482,10 +482,11 @@ async def main(page: ft.Page):
 
 PORT = int(os.getenv("PORT") or os.getenv("REPL_PORT") or "8080")
 HOST = os.getenv("HOST", "0.0.0.0")
+ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 
 ft.app(
     target=main,
     host=HOST,
     port=PORT,
-    assets_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets"))
+    assets_dir=ASSETS_DIR,
 )

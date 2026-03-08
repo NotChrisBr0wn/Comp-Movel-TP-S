@@ -4,7 +4,8 @@ import duckdb as db
 import pandas as pd
 import json
 from dataclasses import field
-from typing import Callable
+from typing import Callable, Optional
+from encryption import EncryptionManager
 
 
 @ft.control
@@ -94,6 +95,12 @@ class TodoApp(ft.Column):
         # Responsive width based on screen size
         self.width = min(600, page.width * 0.9) if page.width else 600
         self.db_tasks: list[dict] = []  # Central list for task data
+        # Initialize encryption manager
+        self.encryption: Optional[EncryptionManager] = None
+        try:
+            self.encryption = EncryptionManager()
+        except ValueError as e:
+            print(f"Warning: {e}")
         self.new_task = ft.TextField(
             hint_text="Whats needs to be done?",
             expand=True,
@@ -167,14 +174,25 @@ class TodoApp(ft.Column):
     async def save_task(self):
         # Guardar as tarefas no client storage e duckDB (parquet)
         tasks_data = self.db_tasks
+        
+        # Convert to JSON string
+        json_data = json.dumps(tasks_data)
+        
+        # Encrypt data if encryption is available
+        if self.encryption:
+            try:
+                json_data = self.encryption.encrypt(json_data)
+            except Exception as e:
+                print(f"Encryption error: {e}")
 
         # Client-Side
         prefs = ft.SharedPreferences()
-        await prefs.set("todo_tasks", json.dumps(tasks_data))
+        await prefs.set("todo_tasks", json_data)
 
-        # DuckDB (parquet)
+        # DuckDB (parquet) - store encrypted data
         if tasks_data:
-            df = pd.DataFrame(tasks_data)
+            # Store as single encrypted string in parquet
+            df = pd.DataFrame([{"encrypted_data": json_data}])
             db.execute("COPY df TO 'tasks.parquet' (FORMAT 'PARQUET')")
         else: # Se não houver tarefas remove o arquivo parquet
             if os.path.exists("tasks.parquet"):
@@ -228,21 +246,41 @@ class TodoApp(ft.Column):
         # Carregar tarefas do client storage
         tasks_data = []
         parquet_path = "tasks.parquet"
+        encrypted_data = None
         
         if os.path.exists(parquet_path):
             try:
                 result = db.execute("SELECT * FROM 'tasks.parquet'").fetchall()
-                tasks_data = [{"name": t[0], "completed": t[1]} for t in result]
+                if result and len(result) > 0:
+                    # New encrypted format
+                    encrypted_data = result[0][0]
             except Exception as e:
+                print(f"Error loading from parquet: {e}")
                 # Fallback to shared_preferences if parquet fails
                 prefs = ft.SharedPreferences()
-                raw_data = await prefs.get("todo_tasks")
-                tasks_data = json.loads(raw_data) if raw_data else []
+                encrypted_data = await prefs.get("todo_tasks")
         else:
             # Load from shared_preferences if parquet doesn't exist
             prefs = ft.SharedPreferences()
-            raw_data = await prefs.get("todo_tasks")
-            tasks_data = json.loads(raw_data) if raw_data else []
+            encrypted_data = await prefs.get("todo_tasks")
+        
+        # Decrypt and parse data
+        if encrypted_data:
+            try:
+                # Try to decrypt if encryption is available
+                if self.encryption:
+                    decrypted_data = self.encryption.decrypt(encrypted_data)
+                    tasks_data = json.loads(decrypted_data)
+                else:
+                    # If no encryption available, try to parse as plain JSON
+                    tasks_data = json.loads(encrypted_data)
+            except Exception as e:
+                print(f"Error decrypting/parsing data: {e}")
+                # Try parsing as plain JSON (backward compatibility)
+                try:
+                    tasks_data = json.loads(encrypted_data)
+                except:
+                    tasks_data = []
 
         self.db_tasks = tasks_data
         self._update_views()

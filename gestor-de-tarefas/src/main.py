@@ -9,11 +9,12 @@ from typing import Callable
 
 @ft.control
 class Task(ft.Column):
-    def __init__(self, task_name, on_status_change, on_delete, **kwargs):
+    def __init__(self, task_name, on_status_change, on_delete, on_name_change, **kwargs):
         super().__init__(**kwargs)
         self.task_name = task_name
         self.on_status_change = on_status_change
         self.on_delete = on_delete
+        self.on_name_change = on_name_change
         self.completed = False
         self.display_task = ft.Checkbox(
             value=False,
@@ -75,7 +76,7 @@ class Task(ft.Column):
         self.display_task.label = self.edit_name.value 
         self.display_view.visible = True
         self.edit_view.visible = False
-        await self.on_status_change() # notifica a mudança de estado
+        await self.on_name_change(self.edit_name.value) # notifica a mudança de nome
         self.update()
 
     async def status_changed(self, e):
@@ -96,7 +97,6 @@ class TodoApp(ft.Column):
         self.new_task = ft.TextField(
             hint_text="Whats needs to be done?",
             expand=True,
-            adaptive=True,
         )
 
         # The main views for tasks
@@ -154,9 +154,6 @@ class TodoApp(ft.Column):
             ),
         ]
 
-    async def did_mount(self):
-        await self.load_tasks()
-
     def switch_tab(self, index):
         self.current_view = index
         if index == 0:
@@ -171,8 +168,8 @@ class TodoApp(ft.Column):
         # Guardar as tarefas no client storage e duckDB (parquet)
         tasks_data = self.db_tasks
 
-        # Client-Side (using new SharedPreferences API)
-        prefs = ft.SharedPreferences(self._page)
+        # Client-Side
+        prefs = ft.SharedPreferences()
         await prefs.set("todo_tasks", json.dumps(tasks_data))
 
         # DuckDB (parquet)
@@ -198,14 +195,17 @@ class TodoApp(ft.Column):
                     await self.task_status_change(d, e.control.value)
                 async def on_delete(e):
                     await self.task_delete(d)
-                return on_status_change, on_delete
+                async def on_name_change(new_name):
+                    await self.task_name_change(d, new_name)
+                return on_status_change, on_delete, on_name_change
 
-            on_status_change_handler, on_delete_handler = create_handlers(data)
+            on_status_change_handler, on_delete_handler, on_name_change_handler = create_handlers(data)
             
             task_ui = Task(
                 data["name"],
                 on_status_change=on_status_change_handler,
                 on_delete=on_delete_handler,
+                on_name_change=on_name_change_handler,
             )
             task_ui.display_task.value = data["completed"]
             return task_ui
@@ -235,12 +235,12 @@ class TodoApp(ft.Column):
                 tasks_data = [{"name": t[0], "completed": t[1]} for t in result]
             except Exception as e:
                 # Fallback to shared_preferences if parquet fails
-                prefs = ft.SharedPreferences(self._page)
+                prefs = ft.SharedPreferences()
                 raw_data = await prefs.get("todo_tasks")
                 tasks_data = json.loads(raw_data) if raw_data else []
         else:
             # Load from shared_preferences if parquet doesn't exist
-            prefs = ft.SharedPreferences(self._page)
+            prefs = ft.SharedPreferences()
             raw_data = await prefs.get("todo_tasks")
             tasks_data = json.loads(raw_data) if raw_data else []
 
@@ -266,6 +266,11 @@ class TodoApp(ft.Column):
         await self.save_task()
         self._update_views()
 
+    async def task_name_change(self, task_data, new_name):
+        task_data['name'] = new_name
+        await self.save_task()
+        self._update_views()
+
     async def task_delete(self, task_data):
         self.db_tasks.remove(task_data)
         await self.save_task()
@@ -280,7 +285,7 @@ async def main(page: ft.Page):
     page.title = "To-Do App"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
-    page.padding = 20
+    page.padding = ft.padding.only(left=20, right=20, top=70, bottom=20)  # Extra top padding for safe area
     
     # Update app width on window resize
     def on_resize(e):

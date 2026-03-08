@@ -6,13 +6,6 @@ import json
 from typing import Optional
 from encryption import EncryptionManager
 
-# Compatibility shim for Flet versions that do not expose ft.control.
-if not hasattr(ft, "control"):
-    def _control_decorator(cls):
-        return cls
-
-    ft.control = _control_decorator  # type: ignore[attr-defined]
-
 @ft.control
 class Task(ft.Column):
     def __init__(self, task_name, on_status_change, on_delete, on_name_change, **kwargs):
@@ -486,8 +479,12 @@ async def main(page: ft.Page):
     else:
         await show_login_view()
 
+PORT = int(os.getenv("PORT") or os.getenv("REPL_PORT") or "8080")
+HOST = os.getenv("HOST", "0.0.0.0")
+
 ft.app(
-    target=main, 
-    port=8550, 
-    assets_dir="../assets"
+    target=main,
+    host=HOST,
+    port=PORT,
+    assets_dir="../assets",
 )

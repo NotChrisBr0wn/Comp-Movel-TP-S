@@ -129,7 +129,6 @@ class TodoApp(ft.Column):
         self.items_left = ft.Text("0 active item(s) left")
 
         self.controls = [
-            ft.Text(f"Signed in as: {self.user_name}", size=13),
             ft.Row(
                 controls=[
                     self.new_task,
@@ -360,7 +359,7 @@ async def main(page: ft.Page):
     def _extract_user_name(user: object) -> str:
         for key in ("name", "login", "email"):
             try:
-                value = user[key]  
+                value = getattr(user, key, None)
                 if value:
                     return str(value)
             except Exception:
@@ -381,7 +380,7 @@ async def main(page: ft.Page):
                     await page.login(oauth_provider, scope=["read:user"])
                 except NotImplementedError:
                     await show_login_view(
-                        "OAuth is not supported in this runtime. Run: flet run --web src/main.py"
+                        "OAuth is not supported in this runtime. Run: flet run -w -p 8550 src/main.py"
                     )
 
         login_button = ft.Button(
@@ -432,14 +431,24 @@ async def main(page: ft.Page):
         app = TodoApp(page, user_id=current_user_id, user_name=current_user_name)
         app_state["app"] = app
 
+        top_padding = 5 if page.platform in ("android", "ios") else 8
+
         page.clean()
         page.add(
-            ft.Row(
-                controls=[
-                    ft.Text(f"Signed in: {current_user_name}", size=14),
-                    ft.TextButton("Logout", on_click=lambda e: page.logout()),
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Text(f"Signed in: {current_user_name}", size=14),
+                        ft.IconButton(
+                            icon=ft.Icons.LOGOUT,
+                            icon_size=24,
+                            on_click=lambda e: page.logout(),
+                            tooltip="Logout",
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                padding=ft.padding.only(top=top_padding, left=10, right=10, bottom=5),
             ),
             app,
         )
@@ -470,4 +479,4 @@ async def main(page: ft.Page):
     else:
         await show_login_view()
 
-ft.run(main, port=8550)
+ft.run(main, host="0.0.0.0", port=8080, view=ft.WEB_BROWSER)

@@ -3,6 +3,7 @@ venv/
 .parquet
 .gitignore
 .vscode/
+/storage\data
 __pycache__/
 *.pyc
 .pytest_cache/
